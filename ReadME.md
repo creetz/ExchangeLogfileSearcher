@@ -1,3 +1,5 @@
+![example](https://github.com/creetz/ExchangeLogfileSearcher/blob/master/example.png)
+
     .SYNOPSIS
     Powershell Log File Search - ExchangeLogfileSearcher.ps1
    

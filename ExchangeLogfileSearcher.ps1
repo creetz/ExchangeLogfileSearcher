@@ -8,7 +8,7 @@
 	THIS CODE IS MADE AVAILABLE AS IS, WITHOUT WARRANTY OF ANY KIND. THE ENTIRE 
 	RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS WITH THE USER.
 	
-	09.03.2018
+	26.10.2018
 	
     .DESCRIPTION
 
@@ -35,6 +35,10 @@
 
     PARAMETER targetexchangeserver
     specifie targetexchangeserver
+
+    PARAMETER IISScopeLastLogFile
+    $true or keep clear
+    When $true file-scope is "select the last iis-logfile - then you can ignore -start and -end!"
          
 	EXAMPLES
     .\ExchangeLogfileSearcher.ps1 -search "192.168.100.100" -start 01/31/2017 -end 12/31/2017
@@ -48,10 +52,25 @@ Param(
 	[Parameter(Mandatory=$true)][string]$search,
     [Parameter(Mandatory=$false)] $sourcelogfilepath,
     [Parameter(Mandatory=$false)] $germantimeformat,
+    [Parameter(Mandatory=$false)] $IISScopeLastLogFile,
     [Parameter(Mandatory=$false)] $targetexchangeserver,
-    [Parameter(Mandatory=$true)][string]$start,
-    [Parameter(Mandatory=$true)][string]$end
+    [Parameter(Mandatory=$false)][string]$start,
+    [Parameter(Mandatory=$false)][string]$end
 )
+
+if (!($start) -and !($IISScopeLastLogFile))
+{
+    Write-Host "Please specifie a start date! (f.E. 10/26/2018)"
+    $start = read-host "StartDate"
+    #$start = get-date $start
+}
+
+if (!($end) -and !($IISScopeLastLogFile))
+{
+    Write-Host "Please specifie an end date! (f.E. 10/26/2018)"
+    $end = read-host "EndDate"
+    #$end = get-date $end
+}
 
 if (($germantimeformat) -and $start)
 {
@@ -118,6 +137,8 @@ if ($choice -eq 1)
     {
         $webservice = read-host "Please specifie a vaild webservice (like mapi, autodiscover, eas, ecp, ews, oab, owa, owacalendar, powershell or rpchttp)"
     }
+
+    $logtype = $webservice
     
     $logpath = "c$\Program Files\Microsoft\Exchange Server\V15\Logging\HttpProxy\$webservice\"
 }
@@ -129,6 +150,8 @@ if ($choice -eq 2)
         $hubdORfrontend = read-host "Please specifie a vaild transportrole (hub or frontend)"
         $transportservice = read-host "Please specifie a vaild transportservice (like SmtpReceive or Smtpsend)"
     }
+
+    $logtype = $transportservice
     
     $logpath = "c$\Program Files\Microsoft\Exchange Server\V15\TransportRoles\Logs\$hubdORfrontend\ProtocolLog\$transportservice\"
 }
@@ -136,22 +159,30 @@ if ($choice -eq 2)
 if ($choice -eq 3)
 {
     $logpath = "c$\Program Files\Microsoft\Exchange Server\V15\Logging\MAPI Client Access\"
+
+    $logtype = "MapiCAS"
 }
 
 if ($choice -eq 4)
 {
     $logpath = "c$\Program Files\Microsoft\Exchange Server\V15\Logging\EWS\"   
+
+    $logtype = "EWS"
 }
 
 if ($choice -eq 5)
 {
     $logpath = "c$\Program Files\Microsoft\Exchange Server\V15\Logging\Calendar Repair Assistant\"   
+
+    $logtype = "CRA"
 }
 
 if ($choice -eq 6)
 {
     $logpath = "c$\inetpub\logs\LogFiles\W3SVC1\"
     $logpath2 = "c$\inetpub\logs\LogFiles\W3SVC2\"
+
+    $logtype = "IISLogs"
 }
 
 <#
@@ -171,8 +202,15 @@ Foreach ($exchsrv in $exchsrvs)
 {
     $path = "\\$($exchsrv.name)\$logpath"
     write-host -ForegroundColor Yellow "Search in $path"
-    
-    $files = Get-ChildItem "$path" | ? {($_.LastWriteTime -gt $start) -and ($_.LastWriteTime -lt $end)}
+
+    if ($IISScopeLastLogFile -and ($choice -eq 6))
+    {
+        $files = (Get-ChildItem "$path" | sort-object lastwritetime -Descending)[0] 
+    }
+    else
+    {
+        $files = Get-ChildItem "$path" | ? {($_.LastWriteTime -gt $start) -and ($_.LastWriteTime -lt $end)}
+    }
 
     if ($files.name.count -gt 0)
     {
@@ -202,49 +240,60 @@ Foreach ($exchsrv in $exchsrvs)
 
     if ($choice -eq 6)
     {
-        if ($files.name.count -gt 0)
-        {
-            $path2 = "\\$($exchsrv.name)\$logpath2"
-            write-host -ForegroundColor Yellow "Search in $path"
-            
-            $files2 = Get-ChildItem "$path2" | ? {($_.LastWriteTime -gt $start) -and ($_.LastWriteTime -lt $end)}
+        $results_iis_backend = @()
 
-            if ($files2.name.count -gt 0)
+        $path2 = "\\$($exchsrv.name)\$logpath2"
+        write-host -ForegroundColor Yellow "Search in $path2"
+        
+        if ($IISScopeLastLogFile)
+        {
+            $files2 = (Get-ChildItem "$path2" | sort-object lastwritetime -Descending)[0] 
+        }
+        else
+        {
+            $files2 = Get-ChildItem "$path2" | ? {($_.LastWriteTime -gt $start) -and ($_.LastWriteTime -lt $end)}
+        }
+        
+        if ($files2.name.count -gt 0)
+        {
+            foreach ($file in $files2)
             {
-                foreach ($file in $files2)
+                $hit = $results_iis_backend.count
+                write-host -ForegroundColor Cyan "Search in $file" -NoNewline
+                if ($sourcelogfilepath)
                 {
-                    $hit = $results.count
-                    write-host -ForegroundColor Cyan "Search in $file" -NoNewline
-                    if ($sourcelogfilepath)
-                    {
-                        $results += Get-Content $file.VersionInfo.filename | select-string "$search" 
-                    }
-                    else
-                    {
-                        $results += Get-Content $file.VersionInfo.filename | select-string "$search"
-                    }
-                    if ($results.count -gt $hit)
-                    {
-                        Write-Host -ForegroundColor White " - hit!"
-                        $sourcelogfilepathserver += "$($path)$($file)"
-                    }
-                    else
-                    {
-                        Write-Host ""
-                    }
+                    $results_iis_backend += Get-Content $file.VersionInfo.filename | select-string "$search" 
+                }
+                else
+                {
+                    $results_iis_backend += Get-Content $file.VersionInfo.filename | select-string "$search"
+                }
+                if ($results_iis_backend.count -gt $hit)
+                {
+                    Write-Host -ForegroundColor White " - hit!"
+                    $sourcelogfilepathserver += "$($path)$($file)"
+                }
+                else
+                {
+                    Write-Host ""
                 }
             }
         }
+            
     }
      
         
-    if (!($csvheadline))
+    if (!($csvheadline) -and ($files))
     {
         $csvheadline = Get-Content $files[-1].VersionInfo.filename -first 10 | select-string "#Fields:"
     }
 }
 
 Write-Host -ForegroundColor Green "$($results.count) Entries found!"
+if ($choice -eq 6)
+{
+    Write-Host -ForegroundColor Cyan "$($results_iis_backend.count) IIS_BackEnd Entries found!"
+}
 
 if ($sourcelogfilepath)
 {
@@ -258,6 +307,21 @@ if ($sourcelogfilepath)
         $i++
     }
     $results = $new_results
+
+    if ($choice -eq 6)
+    {
+        $new_results_iis_backend =@()
+        $csvheadline = "sourcelogfilepath,$($csvheadline.line)"
+        $i = 0
+
+        foreach ($entry in $results_iis_backend)
+        {
+            $new_results_iis_backend += "$($sourcelogfilepathserver[$i]),$results_iis_backend"
+            $i++
+        }
+        $results_iis_backend = $new_results_iis_backend
+    }
+
 }
 else
 {
@@ -294,14 +358,28 @@ mainmenu
 function gridview{
 cls
 $results | Out-GridView -Title "Logging Results"
+    
+    if ($results_iis_backend)
+    {
+        $results_iis_backend | Out-GridView -Title "Logging Results (IIS BackEnd)"
+    }
+
 mainmenu
 }
 
 function exportcsv{
 cls
-$filepath = "c:\temp\$(get-date -format yyyyMMdd_HHmm)exchangelogfilesearcher-export.csv"
+$filepath = "c:\temp\$(get-date -format yyyyMMdd_HHmm)exchangelogfilesearcher-$logtype-export.csv"
 $csvheadline | Out-File -FilePath $filepath
 $results | Out-File -FilePath $filepath -Append
+
+    if ($results_iis_backend)
+    {
+        $filepath = "c:\temp\$(get-date -format yyyyMMdd_HHmm)exchangelogfilesearcher-IISLogsBackEnd-export.csv"
+        $csvheadline | Out-File -FilePath $filepath
+        $results_iis_backend | Out-File -FilePath $filepath -Append
+    }
+
 [bool]$csvexportdone = $true
 mainmenu
 echo ""
@@ -314,6 +392,10 @@ function mainmenu{
 #cls
 
 Write-Host -ForegroundColor White "Found $($results.count) Results"
+if ($choice -eq 6)
+{
+    Write-Host -ForegroundColor Cyan "$($results_iis_backend.count) IIS_BackEnd Entries found!"
+}
  
 if ($fl -eq "1")
 {

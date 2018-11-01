@@ -8,15 +8,19 @@
 	THIS CODE IS MADE AVAILABLE AS IS, WITHOUT WARRANTY OF ANY KIND. THE ENTIRE 
 	RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS WITH THE USER.
 	
-	22.02.2018
+	09.03.2018
 	
     .DESCRIPTION
 
-    This script collects entries from multiple Exchange Log Files and create a single csv-file.
-
+    This scripts is Part of the "Exchange Health Center" - Code
+    
+    This script generate a html view which show the exchange server status
    	
    	PARAMETER search
    
+    PARAMETER lastdays
+    0 is not possible, but you use for example 0.5 for an half day
+    
     PARAMETER start
     Start Date in english format
 
@@ -28,6 +32,9 @@
 
     PARAMETER germantimeformat
     $true or keep clear
+
+    PARAMETER targetexchangeserver
+    specifie targetexchangeserver
          
 	EXAMPLES
     .\ExchangeLogfileSearcher.ps1 -search "192.168.100.100" -start 01/31/2017 -end 12/31/2017
@@ -41,8 +48,9 @@ Param(
 	[Parameter(Mandatory=$true)][string]$search,
     [Parameter(Mandatory=$false)] $sourcelogfilepath,
     [Parameter(Mandatory=$false)] $germantimeformat,
-    [Parameter(Mandatory=$false)][string]$start,
-    [Parameter(Mandatory=$false)][string]$end
+    [Parameter(Mandatory=$false)] $targetexchangeserver,
+    [Parameter(Mandatory=$true)][string]$start,
+    [Parameter(Mandatory=$true)][string]$end
 )
 
 if (($germantimeformat) -and $start)
@@ -65,7 +73,15 @@ if (($germantimeformat) -and $end)
     $end = get-date -Year $endyear -Month $endmonth -Day $endday -Hour $endhour -Minute $endminute
 }
 
-$exchsrvs = get-exchangeserver | Sort-Object identity
+
+if ($targetexchangeserver)
+{
+    $exchsrvs = [pscustomobject]@{name="$targetexchangeserver"}
+}
+else
+{
+    $exchsrvs = get-exchangeserver | Sort-Object identity
+}
 
 cls
  
@@ -79,6 +95,7 @@ echo "    3. Search MAPI CLIENT ACCESS - Logs"
 echo "    4. Search EWS - Logs"
 echo "    5. Search Calendar Repair Assistant"
 echo "    6. IISLog"
+#echo "    7. Remote Powershell [BETA]"
 echo ""
 echo "---------------------------------------------------------"  
 echo ""  
@@ -91,6 +108,7 @@ if ($answer -eq 3){$choice = 3}
 if ($answer -eq 4){$choice = 4}
 if ($answer -eq 5){$choice = 5}
 if ($answer -eq 6){$choice = 6}
+#if ($answer -eq 7){$choice = 7}
 if ($answer -eq 0){break}
 
 
@@ -135,6 +153,13 @@ if ($choice -eq 6)
     $logpath = "c$\inetpub\logs\LogFiles\W3SVC1\"
     $logpath2 = "c$\inetpub\logs\LogFiles\W3SVC2\"
 }
+
+<#
+if ($choice -eq 7)
+{
+    $logpath = "c$\Program Files\Microsoft\Exchange Server\V15\Logging\CmdletInfra\Powershell-Proxy\Cmdlet\"   
+}
+#>
 
 echo ""
 write-host -ForegroundColor Magenta "Important! add 2h - LogFiles are GMT+0"
